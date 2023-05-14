@@ -10,125 +10,75 @@
 #define STAT "./stat.txt"
 
 
-int flagErr = 0;
+int lockNum = 0;
+int unlockNum = 0;
 
 
-void errHandling(char * errStr, int immediateExit) {
-    flagErr = 1;
-    fprintf(stderr, "%s", errStr);
-
-    if (immediateExit) {
-        exit(1);
-    }
-    else {
-        kill(getpid(), SIGINT);
-    }
-}
-
-
-int fileCheck(char * file) {
-    struct stat st;
-
-    if (stat(file, & st) == -1) {
-        perror("error getting file information (stat function)\n");
-        return 0;
-    }
-
-    if (S_ISREG(st.st_mode)) {
-        return 1;
-    }
-    else {
-        fprintf(stderr, "%s", "File is not a regular");
-        exit(1);
-    }
-}
-
-
-void lockingFile(char * file, int * lockExist, int immediateExit) {
+void lockingFile(char * file) {
     char buf[1024];
     sprintf(buf, "%s.lck", file);
- 
-    int fd_lock = open(buf, 
-                        O_WRONLY | O_CREAT | O_TRUNC, 
-                        S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
-    if (fd_lock == -1) {
-        perror("Failed create lock file\n");
-        exit(1);
+
+    int fd_lock = -1;
+    while (fd_lock == -1) {
+        fd_lock = open(buf, O_CREAT | O_EXCL | O_RDWR, 0640);
     }
 
-    * lockExist = 1;
     pid_t curPid = getpid();
     char out_buf[1024] = {0};
     sprintf(out_buf, "%d\n", curPid);
     size_t len = strlen(out_buf);
 
-    if (write(fd_lock, out_buf, strlen(out_buf)) != len) {
-        errHandling("File read error\n", immediateExit);
-    }
+    write(fd_lock, out_buf, strlen(out_buf));
 
     if (close(fd_lock) == -1) {
         perror("File close error\n");
         exit(1);
     }
+
+    lockNum++;
 }
 
 
-void unlockingFile(char * file, int * lockExist, int immediateExit) {
+void unlockingFile(char * file) {
     char buf[1024];
     sprintf(buf, "%s.lck", file);
-    // if (!fileCheck(buf)) {
-    //     errHandling("Lock file existence error", immediateExit);
-    // }
 
     int fd_lock = open(buf, 
                        O_WRONLY | O_CREAT | O_TRUNC, 
                        S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
-    if (fd_lock == -1) {
-        errHandling("File open error\n", immediateExit);
-    }
 
     char in_buf[1024];
     size_t len = read(fd_lock, in_buf, 1023);
-    if (fd_lock == -1) {
-        errHandling("File read error\n", immediateExit);
-    }
 
     in_buf[len] = '\0';
     pid_t curPid = getpid();
     pid_t lockPid;
 
-    if (scanf(in_buf, "%d", & lockPid) != 1) {
-        errHandling("File file format error\n", immediateExit);
-    }
-    if (curPid != lockPid) {
-        errHandling("Invalid unlock file PID\n", immediateExit);
-    }
+    scanf(in_buf, "%d", & lockPid);
     if (close(fd_lock) == -1) {
         perror("File close error\n");
         exit(1);
     }
 
     remove(buf);
-    * lockExist = 0;
+    unlockNum++;
 }
-
-
-int lockNum = 0;
-int unlockNum = 0;
 
 
 void sigFunc(int sig) {
     int logLocked = 0;
 
-    lockingFile(STAT, & logLocked, 1);
+    lockingFile(STAT);
 
     char out_buf[1024] = {0};
     sprintf(out_buf, 
-            "Process PID: %d\nlocks: %d\nunlocks: %d\n%s\n \n", 
+            "Process PID: %d\nlocks: %d\nunlocks: %d\n", 
             getpid(),
             lockNum,
-            unlockNum,
-            flagErr ? "End with error" : "End without error");
+            unlockNum);
+    
+    printf("\naaaaaaaaaaaaaaaaaaa\n");
+
     size_t len = strlen(out_buf);
     int fd_lock = open(STAT, 
                        O_WRONLY | O_APPEND | O_CREAT,
@@ -142,7 +92,8 @@ void sigFunc(int sig) {
         perror("File close error\n");
         exit(1);
     }
-    unlockingFile(STAT, & logLocked, 1);
+    unlockingFile(STAT);
+    
     exit(0);
 }
 
@@ -151,18 +102,15 @@ int myFileLocked = 0;
 
 
 int main(){
-    if (signal(SIGINT, & sigFunc) == SIG_ERR){
-        perror("Signal processing function error\n");
-        exit(1);
-    }
+    printf("\nppppppppppppppppppppppp\n");
+    signal(SIGINT, & sigFunc);
 
     while (1) {
-        lockingFile(MY_FILE, & myFileLocked, 0);
-        lockNum++;
+        lockingFile(MY_FILE);
         sleep(1);
-        unlockingFile(MY_FILE, & myFileLocked, 0);
+        unlockingFile(MY_FILE);
         printf("%d", unlockNum);
-        unlockNum++;
+      
     }
 
     return 0;
